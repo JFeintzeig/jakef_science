@@ -1,0 +1,4 @@
+baseURL = 'https://www.jakef.science/'
+languageCode = 'en-us'
+title = 'Learning How To Computer'
+theme = 'archie'

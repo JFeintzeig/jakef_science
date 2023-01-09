@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Posts on Learning How To Computer</title>
+    <link>https://www.jakef.science/posts/</link>
+    <description>Recent content in Posts on Learning How To Computer</description>
+    <generator>Hugo -- gohugo.io</generator>
+    <language>en-us</language>
+    <lastBuildDate>Sun, 08 Jan 2023 19:00:00 -0500</lastBuildDate><atom:link href="https://www.jakef.science/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Spinning Up</title>
+      <link>https://www.jakef.science/posts/spinning-up/</link>
+      <pubDate>Sun, 08 Jan 2023 19:00:00 -0500</pubDate>
+      
+      <guid>https://www.jakef.science/posts/spinning-up/</guid>
+      <description>Let&amp;rsquo;s get this thing started. What am I doing here!?</description>
+    </item>
+    
+  </channel>
+</rss>
