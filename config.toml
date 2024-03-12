@@ -1,4 +1,34 @@
 baseURL = 'https://www.jakef.science/'
 languageCode = 'en-us'
-title = 'Learning How To Computer'
-theme = 'archie'
+title = """Jake's Blog"""
+theme = 'hugo-ink'
+
+[[menu.main]]
+name = "Home"
+url = "/posts"
+weight = 1
+
+[[menu.main]]
+name = "All posts"
+url = "/posts"
+weight = 2
+
+[[menu.main]]
+name = "About"
+url = "/about"
+weight = 3
+
+[[params.social]]
+name = "Github"
+icon = "github"
+url = "https://github.com/jfeintzeig"
+
+[[params.social]]
+name = "LinkedIn"
+icon = "linkedin"
+url = "https://linkedin.com/in/jfeintzeig"
+
+[[params.social]]
+name = "RSS"
+icon = "rss"
+url = "/index.xml"

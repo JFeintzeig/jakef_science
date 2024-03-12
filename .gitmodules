@@ -1,3 +1,3 @@
-[submodule "themes/archie"]
-	path = themes/archie
-	url = https://github.com/JFeintzeig/archie.git
+[submodule "themes/ink-free"]
+	path = themes/ink-free
+	url = https://github.com/chollinger93/ink-free
