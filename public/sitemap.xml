@@ -2,20 +2,20 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>http://localhost:1313/about/</loc>
+    <loc>https://www.jakef.science/about/</loc>
     <lastmod>2024-03-11T22:30:02-04:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/</loc>
+    <loc>https://www.jakef.science/</loc>
     <lastmod>2024-03-11T22:30:02-04:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/posts/</loc>
+    <loc>https://www.jakef.science/posts/</loc>
     <lastmod>2024-03-11T19:00:00-05:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/posts/starting-up/</loc>
+    <loc>https://www.jakef.science/posts/starting-up/</loc>
     <lastmod>2024-03-11T19:00:00-05:00</lastmod>
   </url><url>
-    <loc>http://localhost:1313/categories/</loc>
+    <loc>https://www.jakef.science/categories/</loc>
   </url><url>
-    <loc>http://localhost:1313/tags/</loc>
+    <loc>https://www.jakef.science/tags/</loc>
   </url>
 </urlset>
