@@ -6,8 +6,15 @@
     <description>Recent content in Posts on Jake&#39;s Blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Mon, 11 Mar 2024 19:00:00 -0500</lastBuildDate>
+    <lastBuildDate>Fri, 22 Mar 2024 21:47:16 -0400</lastBuildDate>
     <atom:link href="https://www.jakef.science/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>gcc -wtf: Optimizing my Ray Tracer, Part I</title>
+      <link>https://www.jakef.science/posts/gcc-wtf/</link>
+      <pubDate>Fri, 22 Mar 2024 21:47:16 -0400</pubDate>
+      <guid>https://www.jakef.science/posts/gcc-wtf/</guid>
+      <description>Inspired by others at the Recurse Center, I recently built a ray tracer by working through the excellent book Ray Tracing in a Weekend. I&amp;rsquo;ve been learning C and was attracted to this project because it was complex enough to be interesting but small enough to be time-constrained (my implementation is ~1,000 lines of code); there&amp;rsquo;s minimal dependencies so I can focus on learning C instead of learning APIs; and the end result is a pretty picture:</description>
+    </item>
     <item>
       <title>Starting Up</title>
       <link>https://www.jakef.science/posts/starting-up/</link>

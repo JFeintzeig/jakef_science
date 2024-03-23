@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>gcc -wtf: Optimizing my Ray Tracer, Part I - Jake&#39;s Blog</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta itemprop="name" content="gcc -wtf: Optimizing my Ray Tracer, Part I">
+<meta itemprop="description" content="Inspired by others at the Recurse Center, I recently built a ray tracer by working through the excellent book Ray Tracing in a Weekend. I&rsquo;ve been learning C and was attracted to this project because it was complex enough to be interesting but small enough to be time-constrained (my implementation is ~1,000 lines of code); there&rsquo;s minimal dependencies so I can focus on learning C instead of learning APIs; and the end result is a pretty picture:"><meta itemprop="datePublished" content="2024-03-22T21:47:16-04:00" />
+<meta itemprop="dateModified" content="2024-03-22T21:47:16-04:00" />
+<meta itemprop="wordCount" content="1486"><meta itemprop="image" content="https://www.jakef.science/posts/gcc-wtf/cover.png" />
+<meta itemprop="keywords" content="" /><meta property="og:title" content="gcc -wtf: Optimizing my Ray Tracer, Part I" />
+<meta property="og:description" content="Inspired by others at the Recurse Center, I recently built a ray tracer by working through the excellent book Ray Tracing in a Weekend. I&rsquo;ve been learning C and was attracted to this project because it was complex enough to be interesting but small enough to be time-constrained (my implementation is ~1,000 lines of code); there&rsquo;s minimal dependencies so I can focus on learning C instead of learning APIs; and the end result is a pretty picture:" />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://www.jakef.science/posts/gcc-wtf/" /><meta property="og:image" content="https://www.jakef.science/posts/gcc-wtf/cover.png" /><meta property="article:section" content="posts" />
+<meta property="article:published_time" content="2024-03-22T21:47:16-04:00" />
+<meta property="article:modified_time" content="2024-03-22T21:47:16-04:00" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:image" content="https://www.jakef.science/posts/gcc-wtf/cover.png" /><meta name="twitter:title" content="gcc -wtf: Optimizing my Ray Tracer, Part I"/>
+<meta name="twitter:description" content="Inspired by others at the Recurse Center, I recently built a ray tracer by working through the excellent book Ray Tracing in a Weekend. I&rsquo;ve been learning C and was attracted to this project because it was complex enough to be interesting but small enough to be time-constrained (my implementation is ~1,000 lines of code); there&rsquo;s minimal dependencies so I can focus on learning C instead of learning APIs; and the end result is a pretty picture:"/>
+<link href='https://fonts.googleapis.com/css?family=Playfair+Display:700' rel='stylesheet' type='text/css'>
+	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/normalize.css" />
+	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/main.css" />
+
+        <link id="dark-scheme" rel="stylesheet" type="text/css" href="https://www.jakef.science/css/dark.css" />
+
+	<script src="https://www.jakef.science/js/feather.min.js"></script>
+	
+		<script src="https://www.jakef.science/js/main.js"></script>
+</head>
+
+<body>
+	<div class="container wrapper">
+		<div class="header">
+	
+	<h1 class="site-title"><a href="https://www.jakef.science/">Jake&#39;s Blog</a></h1>
+	<div class="site-description"><nav class="nav social">
+			<ul class="flat"><li><a href="https://github.com/jfeintzeig" title="Github"><i data-feather="github"></i></a></li><li><a href="https://linkedin.com/in/jfeintzeig" title="LinkedIn"><i data-feather="linkedin"></i></a></li><li><a href="/index.xml" title="RSS"><i data-feather="rss"></i></a></li></ul>
+		</nav>
+	</div>
+
+	<nav class="nav">
+		<ul class="flat">
+			
+			<li>
+				<a href="/">Home</a>
+			</li>
+			
+			<li>
+				<a href="/posts">All posts</a>
+			</li>
+			
+			<li>
+				<a href="/about">About</a>
+			</li>
+			
+		</ul>
+	</nav>
+</div>
+
+
+		<div class="post">
+			<div class="post-header">
+				
+					<div class="meta">
+						<div class="date">
+							<span class="day">22</span>
+							<span class="rest">Mar 2024</span>
+						</div>
+					</div>
+				
+				<div class="matter">
+					<h1 class="title">gcc -wtf: Optimizing my Ray Tracer, Part I</h1>
+				</div>
+			</div>
+					
+			<div class="markdown">
+				<p>Inspired by others at the Recurse Center, I recently built a ray tracer by working through the excellent book <em><a href="https://raytracing.github.io/books/RayTracingInOneWeekend.html">Ray Tracing in a Weekend</a></em>. I&rsquo;ve been learning C and was attracted to this project because it was complex enough to be interesting but small enough to be time-constrained (my implementation is ~1,000 lines of code); there&rsquo;s minimal dependencies so I can focus on learning C instead of learning APIs; and the end result is a pretty picture:</p>
+<p><img src="cover.png" alt="cover"></p>
+<p><em>Cover image of Ray Tracing in a Weekend, rendered by my implementation.</em></p>
+<p>I was excited to create this magical, photorealistic image but was completely surprised at how <em>slow</em> my program was. Rendering this image required 3+ hours of wall-clock time on my fancy new MacBook Pro.</p>
+<p>I didn&rsquo;t know what to expect, but that sure felt slow. I wanted to make it faster. I pair programmed with a couple people and they quickly pointed out a very simple solution: I was not passing any optimization level flags to the compiler. We added <code>-O2</code> to my <code>Makefile</code>, and my program was suddenly 15x faster.</p>
+<p>This <strong>shocked</strong> me! The computer <em>knew</em>. It knew its default behavior was slow and shitty and it had a literal &ldquo;make it go faster&rdquo; button. What was it <em>doing</em>? I had a mental model of how my C code translated into low-level CPU operations, and I did not understand how something as seemingly benign as a compiler flag could make such a huge difference. I wanted to understand. I did some googling, and chatGPT&rsquo;ing, and found vague answers referring to inlining and loop unrolling but I didn&rsquo;t have a strong intuition for how much that mattered or how they applied to my program. I found <a href="https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html">a list</a> of the ~50 flags that go into each optimization level, and I iteratively benchmarked my code with each flag turned on or off, but it didn&rsquo;t replicate the overall speedup (and I <a href="https://stackoverflow.com/questions/60386091/what-exactly-is-the-difference-between-various-optimization-levels-in-gcc-g">later read</a> that those flags only make up a subset of what <code>-O2</code> does).</p>
+<p>So I took things into my own hands. The first thing I did was look at my program&rsquo;s disassembly:</p>
+<div class="highlight"><pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span>objdump -d my_ray_tracer | less</span></span></code></pre></div>
+<p>The optimized version was ~2200 lines of assembly while the unoptimized was ~3500. 60% less code is significant! But also not 15x. So I opened it up and tried to read what it said.</p>
+<p>Unfortunately for me, I had never looked at arm64 assembly before. I felt I had a reasonable grasp of assembly because I&rsquo;d recently spent 150 hours working through a binary reverse engineering CTF (<a href="https://microcorruption.com/">microcorruption</a>, it&rsquo;s the best), but this was foreign. I tried reading documentation but quickly got bored, so I instead took another cue from microcorruption and began to interact with my program dynamically. I opened it up in <code>lldb</code>, a <code>gdb</code>-like debugger for Mac. Microcorruption&rsquo;s UI was such an effective learning tool that I wanted to replicate it, and I luckily found <a href="https://github.com/gdbinit/lldbinit">lldbinit</a>, an <code>lldb</code> extension that gives you a view of the disassembly, the original source code (if you compile with debugging symbols), and the registers. As you step through instruction-by-instruction, you can see which registers change and how.</p>
+<p><img src="lldbinit.png" alt="lldbinit">
+<em>Snapshot of <code>lldbinit</code>, showing the registers, stack memory, and disassembly.</em></p>
+<p>I first focused on the smallest functions in my program, simple things that multiply or subtract vectors, and stepped through the debugger for both versions. I expected these functions to purely consist of math operations, but the unoptimized version was inundated with load and store instructions. I wasn&rsquo;t sure if this was widespread, or if these functions were called ten times or a billion times. I needed to collect more data.</p>
+<p>Luckily, <code>lldb</code> is completely scriptable. You can write Python code to plug into a <a href="https://lldb.llvm.org/use/python-reference.html">broad swath of its functionality</a>. So I googled some more and copied some example code and made a plugin that logged every executed instruction to a file. I set breakpoints around the innermost loop of my ray tracer, propagated a handful of rays in the optimized and unoptimized versions, and made a histogram of the output.</p>
+<p><img src="instruction_count.png" alt="instruction_count">
+<em>Y-axis shows instruction, X-axis shows # of executions during 5 iterations of the innermost loop. The unoptimized version is in blue, orange is the same code compiled with <code>-O2</code>.</em></p>
+<p>It turned out the unoptimized version was <em>mostly</em> doing loads and store operations (<code>ldr</code>, <code>ldur</code>, <code>str</code>, <code>stur</code>), 10x more frequently than the optimized version. When I looked back at the disassembly, I could see this happening everywhere—at the beginning and end of function calls, in between arithmetic operations, seemingly for no reason. Similarly, instructions associated with function calls (<code>b</code>, <code>bl</code>, <code>ret</code>) were 10x more frequent in the unoptimized version. While I knew &ldquo;function inlining&rdquo; was a thing and it made programs faster, I was surprised by the sheer proportion of instructions that were apparently filler.</p>
+<p>Some instructions were <em>more</em> common in the optimized version. I&rsquo;m not sure why the optimized version is doing more floating-point math, but the higher prevalence of <code>ldp</code> instructions looked like a small win: instead of loading one value at a time, this instruction loads two values into a pair of registers at once.</p>
+<p>With this high-level understanding, I could now make more sense of the assembly. At a high-level, my ray tracer has four nested for-loops. The innermost loop, a short math routine to calculate whether a ray hits a sphere, is executed a trillion times and dominates the run time. This is what it looks like in C:</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span></span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#b00040">point3_t</span> center <span style="color:#666">=</span> sphere<span style="color:#666">-&gt;</span>center;
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> radius <span style="color:#666">=</span> sphere<span style="color:#666">-&gt;</span>radius;
+</span></span><span style="display:flex; background-color:#e5e5e5"><span><span style="color:#b00040">vec3_t</span> a_c <span style="color:#666">=</span> <span style="color:#00f">subtract</span>(r<span style="color:#666">-&gt;</span>origin, center);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> a <span style="color:#666">=</span> <span style="color:#00f">length_squared</span>(<span style="color:#666">&amp;</span>r<span style="color:#666">-&gt;</span>direction);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> half_b <span style="color:#666">=</span> <span style="color:#00f">dot</span>(r<span style="color:#666">-&gt;</span>direction, a_c);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> c <span style="color:#666">=</span> <span style="color:#00f">length_squared</span>(<span style="color:#666">&amp;</span>a_c) <span style="color:#666">-</span> radius<span style="color:#666">*</span>radius;
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> discriminant <span style="color:#666">=</span> half_b<span style="color:#666">*</span>half_b <span style="color:#666">-</span> a<span style="color:#666">*</span>c;
+</span></span><span style="display:flex;"><span><span style="color:#008000;font-weight:bold">if</span> (discriminant <span style="color:#666">&lt;</span> <span style="color:#666">0</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#008000;font-weight:bold">return</span> <span style="color:#008000">false</span>;
+</span></span><span style="display:flex;"><span>} <span style="color:#008000;font-weight:bold">else</span> {
+</span></span><span style="display:flex;"><span>   <span style="color:#408080;font-style:italic">// do stuff
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>}</span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>Here is the disassembly (arm64, intel syntex) after compiling it with <code>-O2</code>:</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span></span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span></span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span></span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">13
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">14
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">15
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">16
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span>ldp     <span style="color:#00f;font-weight:bold">d25</span>, <span style="color:#00f;font-weight:bold">d22</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x13</span>, #<span style="">-</span><span style="color:#666">40</span><span style="">]!</span>
+</span></span><span style="display:flex;"><span>ldp     <span style="color:#00f;font-weight:bold">d23</span>, <span style="color:#00f;font-weight:bold">d24</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x13</span>, #<span style="color:#666">16</span><span style="">]</span>
+</span></span><span style="display:flex; background-color:#e5e5e5"><span>fsub    <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d1</span>, <span style="color:#00f;font-weight:bold">d25</span>
+</span></span><span style="display:flex; background-color:#e5e5e5"><span>fsub    <span style="color:#00f;font-weight:bold">d27</span>, <span style="color:#00f;font-weight:bold">d2</span>, <span style="color:#00f;font-weight:bold">d22</span>
+</span></span><span style="display:flex; background-color:#e5e5e5"><span>fsub    <span style="color:#00f;font-weight:bold">d28</span>, <span style="color:#00f;font-weight:bold">d4</span>, <span style="color:#00f;font-weight:bold">d23</span>
+</span></span><span style="display:flex;"><span>fmul    <span style="color:#00f;font-weight:bold">d26</span>, <span style="color:#00f;font-weight:bold">d27</span>, <span style="color:#00f;font-weight:bold">d6</span>
+</span></span><span style="display:flex;"><span>fmadd   <span style="color:#00f;font-weight:bold">d26</span>, <span style="color:#00f;font-weight:bold">d5</span>, <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d26</span>
+</span></span><span style="display:flex;"><span>fmadd   <span style="color:#00f;font-weight:bold">d26</span>, <span style="color:#00f;font-weight:bold">d0</span>, <span style="color:#00f;font-weight:bold">d28</span>, <span style="color:#00f;font-weight:bold">d26</span>
+</span></span><span style="display:flex;"><span>fmul    <span style="color:#00f;font-weight:bold">d27</span>, <span style="color:#00f;font-weight:bold">d27</span>, <span style="color:#00f;font-weight:bold">d27</span>
+</span></span><span style="display:flex;"><span>fmadd   <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d27</span>
+</span></span><span style="display:flex;"><span>fmadd   <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d28</span>, <span style="color:#00f;font-weight:bold">d28</span>, <span style="color:#00f;font-weight:bold">d19</span>
+</span></span><span style="display:flex;"><span>fmsub   <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d24</span>, <span style="color:#00f;font-weight:bold">d24</span>, <span style="color:#00f;font-weight:bold">d19</span>
+</span></span><span style="display:flex;"><span>fmul    <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d16</span>
+</span></span><span style="display:flex;"><span>fmadd   <span style="color:#00f;font-weight:bold">d19</span>, <span style="color:#00f;font-weight:bold">d26</span>, <span style="color:#00f;font-weight:bold">d26</span>, <span style="color:#00f;font-weight:bold">d19</span>
+</span></span><span style="display:flex;"><span>fcmp    <span style="color:#00f;font-weight:bold">d19</span>, #<span style="color:#666">0.0</span>
+</span></span><span style="display:flex;"><span>b<span style="">.mi</span>    <span style="">0</span><span style="color:#00f;font-weight:bold">x10</span><span style="">00033</span><span style="color:#00f;font-weight:bold">c0</span> <span style="">&lt;_ray_color+0</span><span style="color:#00f;font-weight:bold">x88</span><span style="">&gt;</span></span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>To get oriented I&rsquo;ve highlighted the subtract call in both. This assembly is roughly how I imagined my C code was being executed: we load the sphere&rsquo;s coordinates into registers (<code>ldp</code>), and we start subtracting and multiplying those registers (<code>fsub</code>, <code>fmul</code>). Great.</p>
+<p>However, here is a snippet of assembly after compiling the same C code <em>without</em> optimization (the <code>subtract()</code> function call is again highlighted):</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">13
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">14
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">15
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">16
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">17
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">18
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">19
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">20
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">21
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">22
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">23
+</span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">24
+</span></span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">25
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">26
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">27
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">28
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">29
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">30
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">31
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span>sub     <span style="">sp</span>, <span style="">sp</span>, #<span style="color:#666">288</span>
+</span></span><span style="display:flex;"><span>stp     <span style="color:#00f;font-weight:bold">x20</span>, <span style="color:#00f;font-weight:bold">x19</span>, <span style="">[sp</span>, #<span style="color:#666">256</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stp     <span style="color:#00f;font-weight:bold">x29</span>, <span style="color:#00f;font-weight:bold">x30</span>, <span style="">[sp</span>, #<span style="color:#666">272</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>add     <span style="color:#00f;font-weight:bold">x29</span>, <span style="">sp</span>, #<span style="color:#666">272</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">x0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">32</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">x1</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">40</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">x2</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">48</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">x3</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">56</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">x8</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">32</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldr     <span style="color:#00f;font-weight:bold">q0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x8</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldr     <span style="color:#00f;font-weight:bold">x8</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x8</span>, #<span style="color:#666">16</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">x8</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">64</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">q0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">80</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">x8</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">32</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldr     <span style="color:#00f;font-weight:bold">d0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x8</span>, #<span style="color:#666">24</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">d0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">88</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">x8</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">40</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldr     <span style="color:#00f;font-weight:bold">d2</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x8</span>, #<span style="color:#666">16</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldr     <span style="color:#00f;font-weight:bold">d1</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x8</span>, #<span style="color:#666">8</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldr     <span style="color:#00f;font-weight:bold">d0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x8</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">d5</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">64</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">d4</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">72</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">d3</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">80</span><span style="">]</span>
+</span></span><span style="display:flex; background-color:#e5e5e5"><span>bl      <span style="">0</span><span style="color:#00f;font-weight:bold">x10</span><span style="">00018dc</span> <span style="">&lt;_subtract&gt;</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">d2</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">96</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">d1</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">104</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>stur    <span style="color:#00f;font-weight:bold">d0</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">112</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>ldur    <span style="color:#00f;font-weight:bold">x8</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x29</span>, #<span style="">-</span><span style="color:#666">40</span><span style="">]</span>
+</span></span><span style="display:flex;"><span>add     <span style="color:#00f;font-weight:bold">x0</span>, <span style="color:#00f;font-weight:bold">x8</span>, #<span style="color:#666">24</span>
+</span></span><span style="display:flex;"><span>bl      <span style="">0</span><span style="color:#00f;font-weight:bold">x10</span><span style="">00017</span><span style="color:#00f;font-weight:bold">f8</span> <span style="">&lt;_length_squared&gt;</span>
+</span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic">; ...much more code below here...
+</span></span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>This is a mess! While the optimized version required 16 instructions for the entire routine, this version takes 24 just to get to the subtract call. Before that we see a function prologue, a series of loads and stores of certain registers. Inlining optimizes all of this away. Then there are more loads and stores until finally the subtract function is called (not inlined, so it will have its <em>own</em> function prologue, etc.). And most interestingly, in between each operation (<code>subtract(), </code>length_squared()`) it stores the result to memory and loads the next value, which will be slow. When the compiler optimizes, it somehow identifies the most-used variables and keeps them in registers, avoiding unnecessary memory reads/writes.</p>
+<p>I later learned that <code>clang</code> is happy to tell you all about the optimizations it does if you pass it the flags <code>-Rpass=.*</code> and <code>-fsave-optimization-record=yaml</code>. But this investigation gave me a much stronger intuition for what these optimizations do and why they work. And it also gave me ideas for more speed-ups: I know SIMD is a thing, but I don&rsquo;t see it being used here (except perhaps the <code>ldp</code> instruction to load a pair of values?).</p>
+<p>Can we use SIMD to make this go faster?</p>
+
+			</div>
+
+			<div class="tags">
+				
+					
+				
+			</div></div>
+	</div>
+	<div class="footer wrapper">
+	<nav class="nav">
+		<div>2024  <a href="https://github.com/knadh/hugo-ink">Ink</a> theme on <a href="https://gohugo.io">Hugo</a></div>
+	</nav>
+</div>
+
+<script>feather.replace()</script>
+</body>
+</html>
