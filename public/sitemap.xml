@@ -2,13 +2,16 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://www.jakef.science/posts/gcc-wtf/</loc>
-    <lastmod>2024-03-22T21:47:16-04:00</lastmod>
+    <loc>https://www.jakef.science/posts/recursion-riddle/</loc>
+    <lastmod>2024-03-25T17:20:08-04:00</lastmod>
   </url><url>
     <loc>https://www.jakef.science/</loc>
-    <lastmod>2024-03-22T21:47:16-04:00</lastmod>
+    <lastmod>2024-03-25T17:20:08-04:00</lastmod>
   </url><url>
     <loc>https://www.jakef.science/posts/</loc>
+    <lastmod>2024-03-25T17:20:08-04:00</lastmod>
+  </url><url>
+    <loc>https://www.jakef.science/posts/gcc-wtf/</loc>
     <lastmod>2024-03-22T21:47:16-04:00</lastmod>
   </url><url>
     <loc>https://www.jakef.science/about/</loc>

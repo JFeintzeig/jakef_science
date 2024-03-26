@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>A Recursion Riddle: Ray Tracing Optimization Part 2 - Jake&#39;s Blog</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta itemprop="name" content="A Recursion Riddle: Ray Tracing Optimization Part 2">
+<meta itemprop="description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
+I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains."><meta itemprop="datePublished" content="2024-03-25T17:20:08-04:00" />
+<meta itemprop="dateModified" content="2024-03-25T17:20:08-04:00" />
+<meta itemprop="wordCount" content="1760">
+<meta itemprop="keywords" content="" /><meta property="og:title" content="A Recursion Riddle: Ray Tracing Optimization Part 2" />
+<meta property="og:description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
+I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://www.jakef.science/posts/recursion-riddle/" /><meta property="article:section" content="posts" />
+<meta property="article:published_time" content="2024-03-25T17:20:08-04:00" />
+<meta property="article:modified_time" content="2024-03-25T17:20:08-04:00" />
+<meta name="twitter:card" content="summary"/><meta name="twitter:title" content="A Recursion Riddle: Ray Tracing Optimization Part 2"/>
+<meta name="twitter:description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
+I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains."/>
+<link href='https://fonts.googleapis.com/css?family=Playfair+Display:700' rel='stylesheet' type='text/css'>
+	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/normalize.css" />
+	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/main.css" />
+
+        <link id="dark-scheme" rel="stylesheet" type="text/css" href="https://www.jakef.science/css/dark.css" />
+
+	<script src="https://www.jakef.science/js/feather.min.js"></script>
+	
+		<script src="https://www.jakef.science/js/main.js"></script>
+</head>
+
+<body>
+	<div class="container wrapper">
+		<div class="header">
+	
+	<h1 class="site-title"><a href="https://www.jakef.science/">Jake&#39;s Blog</a></h1>
+	<div class="site-description"><nav class="nav social">
+			<ul class="flat"><li><a href="https://github.com/jfeintzeig" title="Github"><i data-feather="github"></i></a></li><li><a href="https://linkedin.com/in/jfeintzeig" title="LinkedIn"><i data-feather="linkedin"></i></a></li><li><a href="/index.xml" title="RSS"><i data-feather="rss"></i></a></li></ul>
+		</nav>
+	</div>
+
+	<nav class="nav">
+		<ul class="flat">
+			
+			<li>
+				<a href="/">Home</a>
+			</li>
+			
+			<li>
+				<a href="/posts">All posts</a>
+			</li>
+			
+			<li>
+				<a href="/about">About</a>
+			</li>
+			
+		</ul>
+	</nav>
+</div>
+
+
+		<div class="post">
+			<div class="post-header">
+				
+					<div class="meta">
+						<div class="date">
+							<span class="day">25</span>
+							<span class="rest">Mar 2024</span>
+						</div>
+					</div>
+				
+				<div class="matter">
+					<h1 class="title">A Recursion Riddle: Ray Tracing Optimization Part 2</h1>
+				</div>
+			</div>
+					
+			<div class="markdown">
+				<p>Since I learned about <a href="https://www.jakef.science/posts/gcc-wtf/">compiler optimization levels</a>, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.</p>
+<p>I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains.</p>
+<p>The most surprising was refactoring a recursive function to a <code>while</code> loop, which sped up the entire program by 1.5x. After sweating over every little instruction in the core loop, this small change to an outer function only required a few lines of code and felt harmless. The recursive function called itself at the end of a specific block (line 5):</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">9
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#b00040">color_t</span> <span style="color:#00f">ray_color</span>(<span style="color:#008000;font-weight:bold">const</span> <span style="color:#b00040">ray_t</span> <span style="color:#666">*</span>r, <span style="color:#b00040">int</span> depth, ...) {
+</span></span><span style="display:flex;"><span>  <span style="color:#408080;font-style:italic">// ... logic removed for clarity ....
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>  <span style="color:#008000;font-weight:bold">if</span> (<span style="color:#00f">hit_sphere_list_vectorized</span>(sphere_list, ...)) { <span style="color:#408080;font-style:italic">// expensive
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>    <span style="color:#008000;font-weight:bold">if</span> (<span style="color:#00f">scatter</span>(rec.mat, r, <span style="color:#666">&amp;</span>rec, <span style="color:#666">&amp;</span>new_attenuation, <span style="color:#666">&amp;</span>nray)) {
+</span></span><span style="display:flex; background-color:#e5e5e5"><span>      <span style="color:#008000;font-weight:bold">return</span> <span style="color:#00f">ray_color</span>(<span style="color:#666">&amp;</span>nray, depth <span style="color:#666">-</span> <span style="color:#666">1</span>, ...);
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>    <span style="color:#408080;font-style:italic">// ... moar logic
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>  }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>I refactored this to use a <code>while</code> loop that depends on <code>depth</code>:</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="background-color:#e5e5e5"><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span></span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">13
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">14
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#b00040">color_t</span> <span style="color:#00f">ray_color</span>(<span style="color:#008000;font-weight:bold">const</span> <span style="color:#b00040">ray_t</span> <span style="color:#666">*</span>r, <span style="color:#b00040">int</span> depth, ...) {
+</span></span><span style="display:flex;"><span>  <span style="color:#408080;font-style:italic">// ... logic removed for clarity ....
+</span></span></span><span style="display:flex; background-color:#e5e5e5"><span><span style="color:#408080;font-style:italic"></span>  <span style="color:#008000;font-weight:bold">while</span> (depth <span style="color:#666">&gt;</span> <span style="color:#666">0</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#008000;font-weight:bold">if</span> (<span style="color:#00f">hit_sphere_list_vectorized</span>(sphere_list, ...)) { <span style="color:#408080;font-style:italic">// expensive
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>      <span style="color:#008000;font-weight:bold">if</span> (<span style="color:#00f">scatter</span>(rec.mat, r, <span style="color:#666">&amp;</span>rec, <span style="color:#666">&amp;</span>new_attenuation, <span style="color:#666">&amp;</span>nray)) {
+</span></span><span style="display:flex;"><span>        attenuation <span style="color:#666">=</span> <span style="color:#408080;font-style:italic">// biz logiz
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>        depth <span style="color:#666">-=</span> <span style="color:#666">1</span>;
+</span></span><span style="display:flex;"><span>      } <span style="color:#008000;font-weight:bold">else</span> {
+</span></span><span style="display:flex;"><span>        <span style="color:#408080;font-style:italic">// ... moar logic
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>        <span style="color:#008000;font-weight:bold">return</span>;
+</span></span><span style="display:flex;"><span>      }
+</span></span><span style="display:flex;"><span>    }
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>With this change, the program wasn&rsquo;t really doing less—it was still tracing the same number of rays through the same number of scatters, doing the same number of calculations and nearly the same number of instructions. It was just organizing these operations in a different way. How could this lead to such a big speed-up?</p>
+<p>Looking at the disassembly did not help me here because the two versions of the code were so similar. Instead I relied on performance counters to understand what the computer was doing. Hardware performance counters are some sort of low-level hardware feature—are they registers?—that keep track of how often certain events occur: cycles, instructions, branches, etc. On Linux you can access these counters to profile a process using <code>perf</code>. I&rsquo;ve been doing most my work on a M2 MacBook Pro, which has a gui-based program called <code>Instruments</code> for performance tuning.</p>
+<p>I&rsquo;ve found <code>Instruments</code> to be somewhat under-documented <sup id="fnref:1"><a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a></sup> but it has a lot of awesome functionality. It provides an interface to use CPU counters to count all sorts of low-level events: cycles, instructions by type (integer, memory accesses, floating-point), cache misses, reads of unaligned memory addresses, pipeline stalls, branch mispredictions. This was the first time I did any serious profiling, and I struggled to interpret these numbers. Branch mispredictions can slow things down, sure, but if my program has 15 million of them is that bad? It was hard to understand what was a &ldquo;good&rdquo; number vs. a &ldquo;bad&rdquo; number and how to isolate the bottlenecks.</p>
+<p>At first I tried normalizing the counters to create metrics like &ldquo;% of branches that were mis-predicted&rdquo; and &ldquo;% of loads that missed the L1 cache&rdquo; but I couldn&rsquo;t make sense of the results. I then realized that since I already stumbled on the <em>solution</em> (removing recursion) and now just had to understand the <em>problem</em>, I could just run every counter under both versions and compare the results.</p>
+<p>Doing this, I noticed a few interesting things:</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>With Recursion</th>
+<th>Without Recursion</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runtime</td>
+<td>57 seconds</td>
+<td>37 seconds</td>
+</tr>
+<tr>
+<td>Instructions / cycle</td>
+<td>1.8</td>
+<td>2.5</td>
+</tr>
+<tr>
+<td>Floating Point uops / cycle</td>
+<td>2.0</td>
+<td>3.0</td>
+</tr>
+<tr>
+<td>L1 Cache Misses (M)</td>
+<td>2,927</td>
+<td>33</td>
+</tr>
+<tr>
+<td>L2 TLB Miss (M)</td>
+<td>77</td>
+<td>0.5</td>
+</tr>
+<tr>
+<td>Pipeline Stalls (B)</td>
+<td>760 (53%)</td>
+<td>322 (34%)</td>
+</tr>
+</tbody>
+</table>
+<p>The first is that the # of instructions / cycle increased from 1.8 to 2.5. My program is faster not because it&rsquo;s executing fewer instructions, but because it&rsquo;s executing those instructions more efficiently. Other similar metrics, such as the # of floating point micro-operations (uops) per cycle and the # of pipeline stalls, showed similar improvements. The 1.5x increase in FP uops/cycle basically matches the 1.5x speed-up, showing the program is primarily constrained by FP operations.</p>
+<p>The second is the # of L1 cache misses dropped dramatically, by a factor of 90x. Other memory metrics had similar drops: L2 TLB misses dropped by 150x and the # of load/store micro-operations that crossed a 64-byte boundary dropped by 220x. While I&rsquo;d once learned the concept of memory hierarchy, I&rsquo;d never worked through a real problem that required this knowledge. Could this be my bottleneck? These were the only metrics I could find that had such significant changes. On <a href="https://www.7-cpu.com/cpu/Apple_M1.html">this cool website</a> I learned that accessing the L2 cache takes an extra 15 cycles compared to the L1 cache on Apple Silicon<sup id="fnref:2"><a href="#fn:2" class="footnote-ref" role="doc-noteref">2</a></sup>. So 2.9B L1 cache misses corresponds to ~15 seconds of time savings. This seemed to match up <sup id="fnref:3"><a href="#fn:3" class="footnote-ref" role="doc-noteref">3</a></sup>.</p>
+<p>But I was confused because my M2 Pro has 128kb of L1 cache space per core, much bigger than any of the data sizes I estimated for my program. My main loop iterates over 8kb of data (~500 spheres containing 4 floats each), and then indexes into another 8kb array containing the sphere&rsquo;s material. While the overall image is ~10MB, the program accesses the pixel buffer very rarely (a million times less frequently than the sphere array) and it fully renders a single pixel before moving on so there&rsquo;s not a lot of jumping within the pixel buffer. There&rsquo;s certainly some overhead floating around, but nothing gets close to the cache size.</p>
+<p>However, recursive functions create a new stack frame for each function call. This was pointed out to me early on by someone I paired with at the Recurse Center, but we&rsquo;d refactored the function to be <a href="https://en.wikipedia.org/wiki/Tail_call">tail-call recursive</a>. We&rsquo;d assumed the compiler would optimize this out, and I hadn&rsquo;t thought of it again. But that turned out not to be the case, and in fact the profiles I collected showed the stack trace getting deeper and deeper with each recursive call.</p>
+<p><img src="recursion.png" alt="recursion">
+<em>A flamegraph showing a profile of the recursive version. Each purple bar is another recursive function call and adds 100 bytes of stack memory.</em></p>
+<p>To understand how this increased the program&rsquo;s memory footprint, I hopped into <code>lldb</code> and kept track of the frame pointer. Each stack frame in this function was ~100 bytes. This again felt okay—while this function had some large parameters, I was passing them all by reference so they weren&rsquo;t copied. My program makes 50 recursive calls max, adding up to ~5kb. This is something, but it&rsquo;s still much smaller than the L1 cache. This confused me for a while.</p>
+<p>On a whim I decided to repeat this profiling exercise with the program running on a single thread instead of 10 parallel threads. This revealed the last major clue: getting rid of the recursive function had almost no impact on performance when running single threaded. I didn&rsquo;t understand this immediately but I asked around until someone pointed out the answer: each thread gets its own stack.</p>
+<p>I&rsquo;d completely overlooked how multithreading and multicore would complicate execution. Each thread gets its own stack, so if I ran 10 threads the 5kb of extra stack memory was actually 50kb. That&rsquo;s <em>still</em> not 124kb, but someone else reminded me that my Mac&rsquo;s cores are not homogenous. It have 6 &ldquo;performance cores&rdquo;, each with 124kb of L1 cache, and 4 &ldquo;efficiency cores&rdquo; each with 64kb of L1 cache. With the 50kb of stack frames, 16kb of spheres, and other overhead, this would easily spill out of the cache on an efficiency core.</p>
+<p>I am <strong>still</strong> a bit confused because I imagined each thread would only need to access it&rsquo;s own stack space, so any one core wouldn&rsquo;t load <em>every thread&rsquo;s</em> stack into the cache. This assumes each thread would run on a single core for the duration of the program, but more profiling showed the operating system actually moves threads around all the time<sup id="fnref:4"><a href="#fn:4" class="footnote-ref" role="doc-noteref">4</a></sup>. When a thread is moved there&rsquo;s a context switch, which causes that core to access data it hadn&rsquo;t used before. I&rsquo;m still not sure if this happens often enough to explain the 2.9B L1 cache misses. Maybe the smaller cache size on the efficiency cores explains everything, or maybe each CPU is jumping around in stack memory more than I think. I did not fully map out where each thread&rsquo;s stack lives in memory, and how often the program accesses memory in other regions.</p>
+<p>After all this, I went back to the performance counter data. I felt like I had a much stronger handle on how to interpret the numbers, and I wanted to look for hints of what to optimize next. The # of floating-point instructions / cycle seemed interesting—this change increased it from 2 to 3; how high can it go? And the pipeline stall metric was also intriguing—30% of all cycles have pipeline stalls, which sounds super wasteful. What does that mean and what&rsquo;s causing it?</p>
+<p>In the next post, I&rsquo;ll try to answer those questions and finally use SIMD to make my ray tracer go faster.</p>
+<div class="footnotes" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn:1">
+<p>A few things I&rsquo;ve been using:</p>
+<ul>
+<li>File &gt; Recording Options contain a list of CPU counters available.</li>
+<li>Hovering over each counter gives a 1-sentence description and is the only documentation I&rsquo;ve found. On my mac I can access these programmatically via <code>defaults read /usr/share/kpep/a15.plist</code>.</li>
+<li>You can run Instruments from the command line via <code>xcrun xctrace</code> . You can apparently use the UI to make a template of what counters you want to record, and then feed that via the commandline, but I couldn&rsquo;t get it to work so I mostly used the GUI.</li>
+<li>More tips welcome!</li>
+</ul>
+&#160;<a href="#fnref:1" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></li>
+<li id="fn:2">
+<p>These #&rsquo;s are for the M1, I&rsquo;m assuming my M2 is roughly the same.&#160;<a href="#fnref:2" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:3">
+<p>In hindsight, this doesn&rsquo;t match up at all! I&rsquo;m running this on 10 cores, so this suggests the time savings / core, which should represent the actual wall-clock time, is ~1.5 seconds, much smaller than the 20 second speed-up I observe. Maybe there&rsquo;s more memory latency here? I don&rsquo;t know what&rsquo;s going on. Do you?&#160;<a href="#fnref:3" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:4">
+<p>In fact, this cleared up another confusion I had: even though the 4 efficiency cores are way less powerful than the performance cores, every thread in my multi-threaded program finishes at about the same time. This is because the OS is constantly rescheduling them across cores, so on average they catch up to each other&#160;<a href="#fnref:4" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+</ol>
+</div>
+
+			</div>
+
+			<div class="tags">
+				
+					
+				
+			</div></div>
+	</div>
+	<div class="footer wrapper">
+	<nav class="nav">
+		<div>2024  <a href="https://github.com/knadh/hugo-ink">Ink</a> theme on <a href="https://gohugo.io">Hugo</a></div>
+	</nav>
+</div>
+
+<script>feather.replace()</script>
+</body>
+</html>

@@ -6,8 +6,15 @@
     <description>Recent content on Jake&#39;s Blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 22 Mar 2024 21:47:16 -0400</lastBuildDate>
+    <lastBuildDate>Mon, 25 Mar 2024 17:20:08 -0400</lastBuildDate>
     <atom:link href="https://www.jakef.science/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>A Recursion Riddle: Ray Tracing Optimization Part 2</title>
+      <link>https://www.jakef.science/posts/recursion-riddle/</link>
+      <pubDate>Mon, 25 Mar 2024 17:20:08 -0400</pubDate>
+      <guid>https://www.jakef.science/posts/recursion-riddle/</guid>
+      <description>Since I learned about compiler optimization levels, I&amp;rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&amp;rsquo;ve implemented multi-threading and SIMD. I&amp;rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&amp;rsquo;ve read instruction timing tables and disassembled and reassembled.&#xA;I&amp;rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&amp;rsquo;ve also made some changes that I didn&amp;rsquo;t think would make a difference but led to significant gains.</description>
+    </item>
     <item>
       <title>gcc -wtf: Optimizing my Ray Tracer, Part I</title>
       <link>https://www.jakef.science/posts/gcc-wtf/</link>
