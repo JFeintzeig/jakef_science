@@ -3,7 +3,7 @@ title: "A Recursion Riddle: Ray Tracing Optimization Part 2"
 date: 2024-03-25T17:20:08-04:00
 ---
 
-Since I learned about [compiler optimization levels]({{< ref "/posts/gcc-wtf" >}}), I've gone down a deep rabbit hole of CPU performance optimization. I've implemented multi-threading and SIMD. I've learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I've read instruction timing tables and disassembled and reassembled.
+Since I learned about [compiler optimization levels]({{< ref "/posts/gcc-wtf" >}}), I've gone down a deep rabbit hole of CPU performance optimization to make this ray tracer faster. I've implemented multi-threading and SIMD. I've learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I've read instruction timing tables and disassembled and reassembled.
 
 I've made a lot of changes that I thought were really clever but instead made my program slower. I've also made some changes that I didn't think would make a difference but led to significant gains.
 

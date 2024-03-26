@@ -4,19 +4,19 @@
 	<meta charset="utf-8" />
 	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>A Recursion Riddle: Ray Tracing Optimization Part 2 - Jake&#39;s Blog</title><meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta itemprop="name" content="A Recursion Riddle: Ray Tracing Optimization Part 2">
-<meta itemprop="description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
+<meta itemprop="description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization to make this ray tracer faster. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
 I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains."><meta itemprop="datePublished" content="2024-03-25T17:20:08-04:00" />
 <meta itemprop="dateModified" content="2024-03-25T17:20:08-04:00" />
-<meta itemprop="wordCount" content="1768">
+<meta itemprop="wordCount" content="1774">
 <meta itemprop="keywords" content="" /><meta property="og:title" content="A Recursion Riddle: Ray Tracing Optimization Part 2" />
-<meta property="og:description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
+<meta property="og:description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization to make this ray tracer faster. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
 I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains." />
 <meta property="og:type" content="article" />
 <meta property="og:url" content="https://www.jakef.science/posts/recursion-riddle/" /><meta property="article:section" content="posts" />
 <meta property="article:published_time" content="2024-03-25T17:20:08-04:00" />
 <meta property="article:modified_time" content="2024-03-25T17:20:08-04:00" />
 <meta name="twitter:card" content="summary"/><meta name="twitter:title" content="A Recursion Riddle: Ray Tracing Optimization Part 2"/>
-<meta name="twitter:description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
+<meta name="twitter:description" content="Since I learned about compiler optimization levels, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization to make this ray tracer faster. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.
 I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains."/>
 <link href='https://fonts.googleapis.com/css?family=Playfair+Display:700' rel='stylesheet' type='text/css'>
 	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/normalize.css" />
@@ -75,7 +75,7 @@ I&rsquo;ve made a lot of changes that I thought were really clever but instead m
 			</div>
 					
 			<div class="markdown">
-				<p>Since I learned about <a href="https://www.jakef.science/posts/gcc-wtf/">compiler optimization levels</a>, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.</p>
+				<p>Since I learned about <a href="https://www.jakef.science/posts/gcc-wtf/">compiler optimization levels</a>, I&rsquo;ve gone down a deep rabbit hole of CPU performance optimization to make this ray tracer faster. I&rsquo;ve implemented multi-threading and SIMD. I&rsquo;ve learned about instruction-level-parallelism and CPU pipelines and memory hierarchy. I&rsquo;ve read instruction timing tables and disassembled and reassembled.</p>
 <p>I&rsquo;ve made a lot of changes that I thought were really clever but instead made my program slower. I&rsquo;ve also made some changes that I didn&rsquo;t think would make a difference but led to significant gains.</p>
 <p>In this latter category, the most surprising change was refactoring a recursive function to a <code>while</code> loop, which sped up the entire program by 1.5x. After sweating over every little instruction in the core loop, this small change to an outer function only required a few lines of code and felt unremarkable. The recursive function called itself at the end of a specific block (line 5):</p>
 <div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;display:grid;">
