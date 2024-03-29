@@ -6,8 +6,15 @@
     <description>Recent content in Posts on Jake&#39;s Blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Mon, 25 Mar 2024 17:20:08 -0400</lastBuildDate>
+    <lastBuildDate>Fri, 29 Mar 2024 13:24:38 -0400</lastBuildDate>
     <atom:link href="https://www.jakef.science/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>SIMD &#43; Parallelism: Ray Tracer Optimization Part 3</title>
+      <link>https://www.jakef.science/posts/simd-parallelism/</link>
+      <pubDate>Fri, 29 Mar 2024 13:24:38 -0400</pubDate>
+      <guid>https://www.jakef.science/posts/simd-parallelism/</guid>
+      <description>Ok, so I sort of buried the lede in the last post: after removing recursion the ray tracer renders the image in 37 seconds, a long ways from the 3+ hours we started with. By the end of this post it will get down to 24.7 seconds, a ~500x overall speedup. The main changes that led to this are:&#xA;Improvement Speedup Compiler optimization flag 15x Multithreading 6.2x SIMD 2.4x Recursion 1.</description>
+    </item>
     <item>
       <title>A Recursion Riddle: Ray Tracing Optimization Part 2</title>
       <link>https://www.jakef.science/posts/recursion-riddle/</link>

@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8" />
+	<meta http-equiv="X-UA-Compatible" content="IE=edge"><title>SIMD &#43; Parallelism: Ray Tracer Optimization Part 3 - Jake&#39;s Blog</title><meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta itemprop="name" content="SIMD &#43; Parallelism: Ray Tracer Optimization Part 3">
+<meta itemprop="description" content="Ok, so I sort of buried the lede in the last post: after removing recursion the ray tracer renders the image in 37 seconds, a long ways from the 3&#43; hours we started with. By the end of this post it will get down to 24.7 seconds, a ~500x overall speedup. The main changes that led to this are:
+Improvement Speedup Compiler optimization flag 15x Multithreading 6.2x SIMD 2.4x Recursion 1."><meta itemprop="datePublished" content="2024-03-29T13:24:38-04:00" />
+<meta itemprop="dateModified" content="2024-03-29T13:24:38-04:00" />
+<meta itemprop="wordCount" content="3171">
+<meta itemprop="keywords" content="" /><meta property="og:title" content="SIMD &#43; Parallelism: Ray Tracer Optimization Part 3" />
+<meta property="og:description" content="Ok, so I sort of buried the lede in the last post: after removing recursion the ray tracer renders the image in 37 seconds, a long ways from the 3&#43; hours we started with. By the end of this post it will get down to 24.7 seconds, a ~500x overall speedup. The main changes that led to this are:
+Improvement Speedup Compiler optimization flag 15x Multithreading 6.2x SIMD 2.4x Recursion 1." />
+<meta property="og:type" content="article" />
+<meta property="og:url" content="https://www.jakef.science/posts/simd-parallelism/" /><meta property="article:section" content="posts" />
+<meta property="article:published_time" content="2024-03-29T13:24:38-04:00" />
+<meta property="article:modified_time" content="2024-03-29T13:24:38-04:00" />
+<meta name="twitter:card" content="summary"/><meta name="twitter:title" content="SIMD &#43; Parallelism: Ray Tracer Optimization Part 3"/>
+<meta name="twitter:description" content="Ok, so I sort of buried the lede in the last post: after removing recursion the ray tracer renders the image in 37 seconds, a long ways from the 3&#43; hours we started with. By the end of this post it will get down to 24.7 seconds, a ~500x overall speedup. The main changes that led to this are:
+Improvement Speedup Compiler optimization flag 15x Multithreading 6.2x SIMD 2.4x Recursion 1."/>
+<link href='https://fonts.googleapis.com/css?family=Playfair+Display:700' rel='stylesheet' type='text/css'>
+	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/normalize.css" />
+	<link rel="stylesheet" type="text/css" media="screen" href="https://www.jakef.science/css/main.css" />
+
+        <link id="dark-scheme" rel="stylesheet" type="text/css" href="https://www.jakef.science/css/dark.css" />
+
+	<script src="https://www.jakef.science/js/feather.min.js"></script>
+	
+		<script src="https://www.jakef.science/js/main.js"></script>
+</head>
+
+<body>
+	<div class="container wrapper">
+		<div class="header">
+	
+	<h1 class="site-title"><a href="https://www.jakef.science/">Jake&#39;s Blog</a></h1>
+	<div class="site-description"><nav class="nav social">
+			<ul class="flat"><li><a href="https://github.com/jfeintzeig" title="Github"><i data-feather="github"></i></a></li><li><a href="https://linkedin.com/in/jfeintzeig" title="LinkedIn"><i data-feather="linkedin"></i></a></li><li><a href="/index.xml" title="RSS"><i data-feather="rss"></i></a></li></ul>
+		</nav>
+	</div>
+
+	<nav class="nav">
+		<ul class="flat">
+			
+			<li>
+				<a href="/">Home</a>
+			</li>
+			
+			<li>
+				<a href="/posts">All posts</a>
+			</li>
+			
+			<li>
+				<a href="/about">About</a>
+			</li>
+			
+		</ul>
+	</nav>
+</div>
+
+
+		<div class="post">
+			<div class="post-header">
+				
+					<div class="meta">
+						<div class="date">
+							<span class="day">29</span>
+							<span class="rest">Mar 2024</span>
+						</div>
+					</div>
+				
+				<div class="matter">
+					<h1 class="title">SIMD &#43; Parallelism: Ray Tracer Optimization Part 3</h1>
+				</div>
+			</div>
+					
+			<div class="markdown">
+				<p>Ok, so I sort of buried the lede in the <a href="https://www.jakef.science/posts/recursion-riddle/">last post</a>: after removing recursion the ray tracer renders the image in 37 seconds, a long ways from the 3+ hours <a href="https://www.jakef.science/posts/gcc-wtf/">we started with</a>. By the end of this post it will get down to 24.7 seconds, a ~500x overall speedup. The main changes that led to this are:</p>
+<table>
+<thead>
+<tr>
+<th>Improvement</th>
+<th>Speedup</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Compiler optimization flag</td>
+<td>15x</td>
+</tr>
+<tr>
+<td>Multithreading</td>
+<td>6.2x</td>
+</tr>
+<tr>
+<td>SIMD</td>
+<td>2.4x</td>
+</tr>
+<tr>
+<td>Recursion</td>
+<td>1.5x</td>
+</tr>
+<tr>
+<td>Assorted other improvements</td>
+<td>1.3x</td>
+</tr>
+</tbody>
+</table>
+<p>I talked about compiler optimization and recursion in past posts. Here I&rsquo;ll focus on SIMD—while it&rsquo;s not the biggest improvement, it&rsquo;s the one I found most interesting, and most challenging. But to understand it, we need to understand what the CPU is doing at a low-level.</p>
+<h3 id="four-kinds-of-parallelism">Four kinds of Parallelism</h3>
+<p>Modern computers have four kinds of parallelism:</p>
+<ol>
+<li>Pipelining</li>
+<li>Superscalar instruction-level parallelism</li>
+<li>Single Instruction Multiple Data (SIMD)</li>
+<li>Multi-core</li>
+</ol>
+<p>I found &ldquo;multi-core&rdquo; to be the easiest to understand: most computers have multiple independent processor cores, and the operating system provides APIs to distribute a workload across them. My M2 MacBook Pro has 10 cores and I used <code>pthreads</code> to split my program into 10 threads, which the OS then schedules on different cores. It took me a few iterations to get multithreading working well. At first I split the calculation of a single pixel across threads, but there was too much overhead and blocking while each thread completed. Instead I split the overall render into the highest-level most-independent 10 chunks possible (based on scanlines), and enabled each thread to work on a chunk without communicating with other threads. This made the program run 6.2x faster<sup id="fnref:1"><a href="#fn:1" class="footnote-ref" role="doc-noteref">1</a></sup>.</p>
+<p>The other three kinds of parallelism are a bit more complicated, but are made much clearer with a diagram (below). When a CPU executes an instruction, it needs to perform multiple steps or stages: load the machine code from memory, translate it from bytes to an instruction (&ldquo;decoding&rdquo;), and then actually execute it (and there&rsquo;s more!). Executing an instruction usually involves doing operations with registers: either loading data from memory to a register (or vice versa), or doing arithmetic operations on values in registers.</p>
+<p><img src="firestorm.png" alt="firestorm">
+<em>Diagram of the Apple M1 CPU (&ldquo;Firestorm&rdquo;) microarchitecture, from <a href="https://dougallj.github.io/applecpu/firestorm.html">this incredible website</a>.</em></p>
+<p><em>Pipelining</em> refers to a processor that split these stages into independent components. In any one clock cycle, multiple instructions can be processed simultaneously in different stages. An assembly line analogy is often used: while the first instruction is being executed, a second is being decoded, and a third is being fetched. In the microarchitecture diagram above, the amount of pipelining is shown vertically. Many modern CPUs have <a href="https://en.wikipedia.org/wiki/Comparison_of_CPU_microarchitectures">10-20 pipeline stages</a>.</p>
+<p><em>Superscalar</em> refers to a CPU that has multiple independent execution units (blue boxes above). This allows it to execute multiple instructions in the same cycle. In the diagram above, the amount of superscalar parallelism shows up in the width, and using the word &ldquo;wide&rdquo; to refer to a processor usually refers to the amount of instruction-level parallelism that can be achieved via independent execution units. Apple Silicon chips are noteworthy for how wide they are: an M1 performance core has 14 execution units!</p>
+<p><em>SIMD</em> refers to a specific type of hardware acceleration in which a processor can apply the same operation to multiple values in a single cycle. It does this by loading the data into wide registers, say stacking 8 32-bit floats side-by-side in a 256-bit register, and then doing an add operation on the entire register at once and treating each 32-bit &ldquo;lane&rdquo; as its own independent number. This is often called &ldquo;vectorization&rdquo;. Different computers have different instruction sets for SIMD. My M2 is ARM and uses ARM&rsquo;s <a href="https://developer.arm.com/Architectures/Neon">Neon architecture</a>, which has 128-bit registers. Many Intel chips use the AVX SIMD architecture.</p>
+<p>Modern CPUs have all four of these types of parallelism. My M2 (which I&rsquo;m assuming has the same architecture and properties as a M1) has multiple cores; each core has multiple pipeline stages and 14 execution units; it includes 4 floating point execution units, each of which is able to do SIMD operations with 128-bit registers.</p>
+<p>When I wrote my ray tracer in vanilla C, I was able to take advantage of pipelining and (to some extent) instruction-level parallelism without doing anything special. But to make the most of SIMD I needed to write specific code using Neon instructions<sup id="fnref:2"><a href="#fn:2" class="footnote-ref" role="doc-noteref">2</a></sup>.</p>
+<h3 id="a-first-attempt-at-simd">A first attempt at SIMD</h3>
+<p>I focused my SIMD efforts on the innermost loop of my program that we looked at in Part 1 of this blog series: a ~10 line math routine that calculates the intersection between a ray and a sphere, and is executed about a trillion times:</p>
+<p><div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#b00040">point3_t</span> center <span style="color:#666">=</span> sphere<span style="color:#666">-&gt;</span>center;
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> radius <span style="color:#666">=</span> sphere<span style="color:#666">-&gt;</span>radius;
+</span></span><span style="display:flex;"><span><span style="color:#b00040">vec3_t</span> a_c <span style="color:#666">=</span> <span style="color:#00f">subtract</span>(r<span style="color:#666">-&gt;</span>origin, center);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> a <span style="color:#666">=</span> <span style="color:#00f">length_squared</span>(<span style="color:#666">&amp;</span>r<span style="color:#666">-&gt;</span>direction);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> half_b <span style="color:#666">=</span> <span style="color:#00f">dot</span>(r<span style="color:#666">-&gt;</span>direction, a_c);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> c <span style="color:#666">=</span> <span style="color:#00f">length_squared</span>(<span style="color:#666">&amp;</span>a_c) <span style="color:#666">-</span> radius<span style="color:#666">*</span>radius;
+</span></span><span style="display:flex;"><span><span style="color:#b00040">double</span> discriminant <span style="color:#666">=</span> half_b<span style="color:#666">*</span>half_b <span style="color:#666">-</span> a<span style="color:#666">*</span>c;
+</span></span><span style="display:flex;"><span><span style="color:#008000;font-weight:bold">if</span> (discriminant <span style="color:#666">&lt;</span> <span style="color:#666">0</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#008000;font-weight:bold">return</span> <span style="color:#008000">false</span>;
+</span></span><span style="display:flex;"><span>} <span style="color:#008000;font-weight:bold">else</span> {
+</span></span><span style="display:flex;"><span>   <span style="color:#408080;font-style:italic">// do stuff
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>}</span></span></code></pre></td></tr></table>
+</div>
+</div>
+<em>This is derived <a href="https://raytracing.github.io/books/RayTracingInOneWeekend.html#addingasphere/ray-sphereintersection">here</a>, if you&rsquo;re curious about the math.</em></p>
+<p>The rays and spheres both consist of &ldquo;vectors&rdquo;: the <code>{x,y,z}</code> coordinates of their positions and the ray&rsquo;s direction. I first tried to just stack these in SIMD registers &ldquo;horizontally&rdquo;, so that instead of multiplying x*x and y*y and z*z in three separate operations, I could do it in one:</p>
+<p><img src="vec1.png" alt="vec1"></p>
+<p>I changed all my data types from <code>double</code> to <code>float</code> to fit each 3-vector into a 128-bit v-register with one lane to spare, padding my struct with a 4th value set to zero. After reading about NEON Intrinsics, the C functions that are essentially wrappers around SIMD instructions, I implemented a vectorized version of this routine:</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">13
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">14
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">15
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">16
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> origin <span style="color:#666">=</span> <span style="color:#00f">vld1q_f32</span>(<span style="color:#666">&amp;</span>r<span style="color:#666">-&gt;</span>origin.e[<span style="color:#666">0</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> direction <span style="color:#666">=</span> <span style="color:#00f">vld1q_f32</span>(<span style="color:#666">&amp;</span>r<span style="color:#666">-&gt;</span>direction.e[<span style="color:#666">0</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> center_vec <span style="color:#666">=</span> <span style="color:#00f">vld1q_f32</span>(<span style="color:#666">&amp;</span>center.e[<span style="color:#666">0</span>]);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> a_c <span style="color:#666">=</span> <span style="color:#00f">vsubq_f32</span>(origin, center_vec);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> half_b_vec <span style="color:#666">=</span> <span style="color:#00f">vmulq_f32</span>(direction, a_c);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float</span> half_b <span style="color:#666">=</span> <span style="color:#00f">vaddvq_f32</span>(half_b_vec); <span style="color:#408080;font-style:italic">// horizontal sum
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span><span style="color:#b00040">float32x4_t</span> length_squared_vec <span style="color:#666">=</span> <span style="color:#00f">vmulq_f32</span>(a_c, a_c);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float</span> c <span style="color:#666">=</span> <span style="color:#00f">vaddvq_f32</span>(length_squared_vec) <span style="color:#666">-</span> radius<span style="color:#666">*</span>radius;
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float</span> discriminant <span style="color:#666">=</span> half_b<span style="color:#666">*</span>half_b <span style="color:#666">-</span> c;
+</span></span><span style="display:flex;"><span><span style="color:#008000;font-weight:bold">if</span> (discriminant <span style="color:#666">&lt;</span> <span style="color:#666">0</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#008000;font-weight:bold">return</span> <span style="color:#008000">false</span>;
+</span></span><span style="display:flex;"><span>} <span style="color:#008000;font-weight:bold">else</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#408080;font-style:italic">// do stuff
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>}</span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>This was 14% faster than the scalar version, a much smaller improvement than the maximum-possible 4x speed-up I was naively hoping for. I was a bit discouraged and confused, but my initial impression was that moving data in and out of SIMD registers adds overhead, and I was only using three out of four lanes. I also couldn&rsquo;t figure out how to gracefully switch between vector operations and scalar operations. A dot product is a vector operation but it results in a scalar, and extracting and using that scalar meant I could no longer do SIMD operations. You can see the awkward and inefficient switching back and forth between scalar types (<code>float</code>) and vector types (float32x4_t` represents a SIMD register with four 32-bit floats).</p>
+<h3 id="four-spheres-at-a-time">Four spheres at a time</h3>
+<p>Luckily there are <a href="https://developer.arm.com/documentation/102159/latest/">many</a> <a href="https://developer.arm.com/documentation/102467/0201/?lang=en">extensive</a> <a href="https://developer.arm.com/documentation/den0018/latest/">guides</a> for optimizing code like this. I read through some examples and scoured the <a href="https://developer.arm.com/architectures/instruction-sets/intrinsics">intrinsics reference</a>. To make the most of SIMD, I wanted to translate my code into a single long block consisting exclusively of SIMD operations, avoiding branch conditions and horizontal operations. I also learned about &ldquo;serial dependency chains&rdquo;: my processor has 4 floating point units, and ideally adjacent instructions are independent so the 4 units can execute them in parallel. But if the result of one instruction feeds into the next instruction, they are dependent and must be run one after another (ie. serially). Refactoring to avoid these dependencies allowed me to take advantage of the parallelism provided by my wide processor.</p>
+<p>The routine above is inside of a loop that iterates over 500 spheres. Instead of vectorizing the calculation for a single sphere, I could instead use SIMD registers to do the calculation for four sphere&rsquo;s at once. I could load one vector with x&rsquo;s from four spheres, another with y&rsquo;s from four spheres, etc:</p>
+<p><img src="vec2.png" alt="vec2"></p>
+<p>This changes the horizontal sum in our dot product into a vector addition, so four dot-products can be completed with 3 instructions (with fused multiply-add operations) instead of 8. The routine for 4 spheres now looks like:
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">13
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">14
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">15
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">16
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">17
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#408080;font-style:italic">// a_c = origin - center
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span><span style="color:#b00040">float32x4_t</span> ac_x <span style="color:#666">=</span> <span style="color:#00f">vsubq_f32</span>(ray_orx, vec_spheres_xs.val[<span style="color:#666">0</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> ac_y <span style="color:#666">=</span> <span style="color:#00f">vsubq_f32</span>(ray_ory, vec_spheres_ys.val[<span style="color:#666">0</span>]);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> ac_z <span style="color:#666">=</span> <span style="color:#00f">vsubq_f32</span>(ray_orz, vec_spheres_zs.val[<span style="color:#666">0</span>]);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic">// half_b = direction dot a_c
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span><span style="color:#b00040">float32x4_t</span> halfb_x <span style="color:#666">=</span> <span style="color:#00f">vmulq_f32</span>(ray_dirx, ac_x);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> halfb_y <span style="color:#666">=</span> <span style="color:#00f">vmulq_f32</span>(ray_diry, ac_y);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> halfb_z <span style="color:#666">=</span> <span style="color:#00f">vmulq_f32</span>(ray_dirz, ac_z);
+</span></span><span style="display:flex;"><span><span style="color:#b00040">float32x4_t</span> halfb <span style="color:#666">=</span> <span style="color:#00f">vaddq_f32</span>(halfb_x, halfb_y);
+</span></span><span style="display:flex;"><span>halfb <span style="color:#666">=</span> <span style="color:#00f">vaddq_f32</span>(halfb, halfb_z);
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic">// ... more code
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>
+</span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic">// discriminant = half_b*half_b - c
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span><span style="color:#b00040">float32x4_t</span> disc <span style="color:#666">=</span> <span style="color:#00f">vmulq_f32</span>(halfb, halfb);
+</span></span><span style="display:flex;"><span>disc <span style="color:#666">=</span> <span style="color:#00f">vsubq_f32</span>(disc, c);</span></span></code></pre></td></tr></table>
+</div>
+</div></p>
+<p>To break serial dependency chains, I unrolled the loop so each iteration handles 8 spheres: two identical calculations operating on different data. My first pass at implementing this improved the speed by 10%. A small step, but not revolutionary.</p>
+<p>I got another 11% speedup from vectorizing the branch condition at the end of the loop. My first approach was to just iterate over each item in the discrimant vector, a scalar computation:
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">7
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#008000;font-weight:bold">for</span> (<span style="color:#b00040">int</span> i <span style="color:#666">=</span> <span style="color:#666">0</span>; i <span style="color:#666">&lt;</span> <span style="color:#666">4</span>; i<span style="color:#666">++</span>) {
+</span></span><span style="display:flex;"><span>  <span style="color:#008000;font-weight:bold">if</span> (disc[i] <span style="color:#666">&lt;</span> <span style="color:#666">0</span>) {
+</span></span><span style="display:flex;"><span>    <span style="color:#008000;font-weight:bold">continue</span>;
+</span></span><span style="display:flex;"><span>  }
+</span></span><span style="display:flex;"><span>  <span style="color:#408080;font-style:italic">// real work
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>}
+</span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic">// repeat again for 2nd set of 4 spheres
+</span></span></span></code></pre></td></tr></table>
+</div>
+</div>
+But we can avoid this whole ordeal if the entire vector is less than zero, and NEON has relatively efficient instructions for calculating the maximum within a vector. Doing this, first pairwise within the two vectors and then within that result, allows us to use SIMD for as long as possible and requires only one comparison operation (which has a low throughput):
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#008000;font-weight:bold">if</span> (<span style="color:#00f">vmaxvq_f32</span>(<span style="color:#00f">vpmaxq_f32</span>(disc, disc2)) <span style="color:#666">&lt;</span> <span style="color:#666">0.0f</span>) {
+</span></span><span style="display:flex;"><span>  sphere_pointer <span style="color:#666">+=</span> <span style="color:#666">8</span>;
+</span></span><span style="display:flex;"><span>  <span style="color:#008000;font-weight:bold">continue</span>;
+</span></span><span style="display:flex;"><span>}</span></span></code></pre></td></tr></table>
+</div>
+</div>
+This compiles down to:
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span>fmaxp<span style="">.4s</span>    <span style="color:#00f;font-weight:bold">v3</span>, <span style="color:#00f;font-weight:bold">v14</span>, <span style="color:#00f;font-weight:bold">v1</span>
+</span></span><span style="display:flex;"><span>fmaxv<span style="">.4s</span>    <span style="color:#00f;font-weight:bold">s3</span>, <span style="color:#00f;font-weight:bold">v3</span>
+</span></span><span style="display:flex;"><span>fcmp        <span style="color:#00f;font-weight:bold">s3</span>, #<span style="color:#666">0.0</span>
+</span></span><span style="display:flex;"><span>b<span style="">.lt</span>        <span style="">0</span><span style="color:#00f;font-weight:bold">x10</span><span style="">0002</span><span style="color:#00f;font-weight:bold">b58</span> <span style="">&lt;_render_scanline+0</span><span style="color:#00f;font-weight:bold">x3c4</span><span style="">&gt;</span></span></span></code></pre></td></tr></table>
+</div>
+</div></p>
+<p>You can see the two vectorized <code>max</code> operations that put the result in the scalar register <code>s3</code> (really just the first lane of <code>v3</code>) and the single <code>fcmp</code>. This serves as an early return to avoid the scalar branching logic.</p>
+<p>I now turned my attention to data loading. My first attempt was cumbersome: in each loop iteration I rearranged four spheres in memory to load them into the register in the right form. After reading more docs, I found NEON has instructions to do interleaved loads. If you have an array of structs containing four values, there is a single instruction that can de-interleave the data as it loads it into SIMD registers. My spheres were stored in an array of structs, each of which looked like:
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">5
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#008000;font-weight:bold">typedef</span> <span style="color:#008000;font-weight:bold">struct</span> <span style="color:#b00040">sphere_t</span> {
+</span></span><span style="display:flex;"><span>  <span style="color:#b00040">point3_t</span> center; <span style="color:#408080;font-style:italic">// equivalent to float x, y, z;
+</span></span></span><span style="display:flex;"><span><span style="color:#408080;font-style:italic"></span>  <span style="color:#b00040">float</span> radius;
+</span></span><span style="display:flex;"><span>  <span style="color:#b00040">material_t</span> <span style="color:#666">*</span>material;
+</span></span><span style="display:flex;"><span>} <span style="color:#b00040">sphere_t</span>;</span></span></code></pre></td></tr></table>
+</div>
+</div>
+If I moved the sphere&rsquo;s material into a separate array then I could load the x, y, z, and radius for four spheres into four SIMD registers with a single instruction:
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-c" data-lang="c"><span style="display:flex;"><span><span style="color:#b00040">float32x4x4_t</span> vec_spheres <span style="color:#666">=</span> <span style="color:#00f">vld4q_f32</span>(<span style="color:#666">&amp;</span>this_sphere<span style="color:#666">-&gt;</span>center.e[<span style="color:#666">0</span>]);</span></span></code></pre></td></tr></table>
+</div>
+</div>
+which compiles down to the following assembly:
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">1
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span>ld<span style="">4.4s</span>  <span style="">{</span> <span style="color:#00f;font-weight:bold">v20</span>, <span style="color:#00f;font-weight:bold">v21</span>, <span style="color:#00f;font-weight:bold">v22</span>, <span style="color:#00f;font-weight:bold">v23</span> <span style="">}</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x15</span><span style="">]</span></span></span></code></pre></td></tr></table>
+</div>
+</div></p>
+<p>This improved performance by 23%, bringing the total speed-up from SIMD to 1.71x.</p>
+<h3 id="direct-data-loads-and-instruction-level-parallelism">Direct Data Loads and Instruction-level Parallelism</h3>
+<p>At this point, and after figuring out the recursion L1 cache miss problem, my ray tracer ran in 37 seconds. But the performance counter metrics still showed some oddities. The # of floating point uops / cycle was 3.0 but the theoretical max should be closer to 4.0<sup id="fnref:3"><a href="#fn:3" class="footnote-ref" role="doc-noteref">3</a></sup>. And 30% of cycles had pipeline stalls - what&rsquo;s up with that?</p>
+<p>I went back to the drawing board. It felt like I still had a data dependency problem but I couldn&rsquo;t figure out where. I did more research on performance engineering and came across <a href="https://en.algorithmica.org/hpc/">this textbook</a>. One of the most helpful parts was the worked examples, such as <a href="https://en.algorithmica.org/hpc/algorithms/gcd/">this example</a> where they analyze a serial dependency chain (see diagram near bottom of page) and show how refactoring the code breaks the chain apart. I found similar inspiration in <a href="https://en.algorithmica.org/hpc/pipelining/throughput/">this section</a> that explains how to analyze instruction throughput.</p>
+<p>So I took a closer look at the instruction tables for Apple Silicon. The only place in the whole wide internet that had this information was the same source as the microarchitecture diagram about: <a href="https://mastodon.social/@dougall">@dougallj&rsquo;s</a> <a href="https://dougallj.github.io/applecpu/firestorm.html">Apple CPU page</a>, which is both comprehensive and incredibly detailed. In scanning through the instruction table there, I realized the &ldquo;interleaved load&rdquo; instruction I was using (<code>ld4</code>) had horrible performance! It&rsquo;s reciprocal throughput is a full 2 cycles/instruction (the cheapest instructions are 8x better), and critically it requires the floating point units for 8 uops. There had to be a better way.</p>
+<p>I didn&rsquo;t have to dig much to find one. Instead of loading interleaved data I could do a direct &ldquo;linear&rdquo; load: 8 contiguous floats in memory are loaded into two SIMD registers using the <code>ld1.4s</code> instruction. I&rsquo;d have to do this 4x to load all 8 spheres into memory (as opposed to only 2x for the interleaved load), but the instruction has a reciprocal throughput of 0.67 and doesn&rsquo;t using the floating point units at all!</p>
+<p><img src="load.png" alt="data_loads"></p>
+<p>This was perfect: my program was mostly constrained by floating point operations. By offloading the data loads to the memory execution units, they would run in parallel and free up the floating point units to do the actual math. Instruction-level parallelism!<sup id="fnref:4"><a href="#fn:4" class="footnote-ref" role="doc-noteref">4</a></sup></p>
+<p>Implementing this required refactoring my data model <em>yet again</em>. I made a 4 arrays: one for every sphere&rsquo;s x-coordinate, another for y&rsquo;s, etc. After this the big image rendered in 25.4 seconds, a 40% improvement. Here&rsquo;s the assembly for this final version of the inner loop:</p>
+<div class="highlight"><div style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;">
+<table style="border-spacing:0;padding:0;margin:0;border:0;"><tr><td style="vertical-align:top;padding:0;margin:0;border:0;">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 1
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 2
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 3
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 4
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 5
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 6
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 7
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 8
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f"> 9
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">10
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">11
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">12
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">13
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">14
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">15
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">16
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">17
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">18
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">19
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">20
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">21
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">22
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">23
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">24
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">25
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">26
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">27
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">28
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">29
+</span><span style="white-space:pre;-webkit-user-select:none;user-select:none;margin-right:0.4em;padding:0 0.4em 0 0.4em;color:#7f7f7f">30
+</span></code></pre></td>
+<td style="vertical-align:top;padding:0;margin:0;border:0;;width:100%">
+<pre tabindex="0" style=";-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-armasm" data-lang="armasm"><span style="display:flex;"><span>ld<span style="">1.4s</span>  <span style="">{</span> <span style="color:#00f;font-weight:bold">v0</span>, <span style="color:#00f;font-weight:bold">v1</span> <span style="">}</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x30</span><span style="">]</span>, #<span style="color:#666">32</span>
+</span></span><span style="display:flex;"><span>ld<span style="">1.4s</span>  <span style="">{</span> <span style="color:#00f;font-weight:bold">v17</span>, <span style="color:#00f;font-weight:bold">v18</span> <span style="">}</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x0</span><span style="">]</span>, #<span style="color:#666">32</span>
+</span></span><span style="display:flex;"><span>ld<span style="">1.4s</span>  <span style="">{</span> <span style="color:#00f;font-weight:bold">v5</span>, <span style="color:#00f;font-weight:bold">v6</span> <span style="">}</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x1</span><span style="">]</span>, #<span style="color:#666">32</span>
+</span></span><span style="display:flex;"><span>ld<span style="">1.4s</span>  <span style="">{</span> <span style="color:#00f;font-weight:bold">v8</span>, <span style="color:#00f;font-weight:bold">v9</span> <span style="">}</span>, <span style="">[</span><span style="color:#00f;font-weight:bold">x19</span><span style="">]</span>, #<span style="color:#666">32</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v14</span>, <span style="color:#00f;font-weight:bold">v29</span>, <span style="color:#00f;font-weight:bold">v0</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v3</span>, <span style="color:#00f;font-weight:bold">v30</span>, <span style="color:#00f;font-weight:bold">v17</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v16</span>, <span style="color:#00f;font-weight:bold">v31</span>, <span style="color:#00f;font-weight:bold">v5</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v29</span>, <span style="color:#00f;font-weight:bold">v1</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v17</span>, <span style="color:#00f;font-weight:bold">v30</span>, <span style="color:#00f;font-weight:bold">v18</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v5</span>, <span style="color:#00f;font-weight:bold">v31</span>, <span style="color:#00f;font-weight:bold">v6</span>
+</span></span><span style="display:flex;"><span>fmul<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v12</span>, <span style="color:#00f;font-weight:bold">v14</span>, <span style="color:#00f;font-weight:bold">v25</span><span style="">[0]</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v12</span>, <span style="color:#00f;font-weight:bold">v27</span>, <span style="color:#00f;font-weight:bold">v3</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v12</span>, <span style="color:#00f;font-weight:bold">v28</span>, <span style="color:#00f;font-weight:bold">v16</span>
+</span></span><span style="display:flex;"><span>fmul<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v0</span>, <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v25</span><span style="">[0]</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v0</span>, <span style="color:#00f;font-weight:bold">v27</span>, <span style="color:#00f;font-weight:bold">v17</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v0</span>, <span style="color:#00f;font-weight:bold">v28</span>, <span style="color:#00f;font-weight:bold">v5</span>
+</span></span><span style="display:flex;"><span>fmul<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v6</span>, <span style="color:#00f;font-weight:bold">v14</span>, <span style="color:#00f;font-weight:bold">v14</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v6</span>, <span style="color:#00f;font-weight:bold">v3</span>, <span style="color:#00f;font-weight:bold">v3</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v6</span>, <span style="color:#00f;font-weight:bold">v16</span>, <span style="color:#00f;font-weight:bold">v16</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v8</span>, <span style="color:#00f;font-weight:bold">v12</span>, <span style="color:#00f;font-weight:bold">v12</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v14</span>, <span style="color:#00f;font-weight:bold">v8</span>, <span style="color:#00f;font-weight:bold">v6</span>
+</span></span><span style="display:flex;"><span>fmul<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v1</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v17</span>, <span style="color:#00f;font-weight:bold">v17</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v5</span>, <span style="color:#00f;font-weight:bold">v5</span>
+</span></span><span style="display:flex;"><span>fmla<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v9</span>, <span style="color:#00f;font-weight:bold">v0</span>, <span style="color:#00f;font-weight:bold">v0</span>
+</span></span><span style="display:flex;"><span>fsub<span style="">.4s</span> <span style="color:#00f;font-weight:bold">v1</span>, <span style="color:#00f;font-weight:bold">v9</span>, <span style="color:#00f;font-weight:bold">v1</span>
+</span></span><span style="display:flex;"><span>fmaxp<span style="">.4s</span>        <span style="color:#00f;font-weight:bold">v3</span>, <span style="color:#00f;font-weight:bold">v14</span>, <span style="color:#00f;font-weight:bold">v1</span>
+</span></span><span style="display:flex;"><span>fmaxv<span style="">.4s</span>        <span style="color:#00f;font-weight:bold">s3</span>, <span style="color:#00f;font-weight:bold">v3</span>
+</span></span><span style="display:flex;"><span>fcmp    <span style="color:#00f;font-weight:bold">s3</span>, #<span style="color:#666">0.0</span>
+</span></span><span style="display:flex;"><span>b<span style="">.lt</span>    <span style="">0</span><span style="color:#00f;font-weight:bold">x10</span><span style="">0002</span><span style="color:#00f;font-weight:bold">b58</span> <span style="">&lt;_render_scanline+0</span><span style="color:#00f;font-weight:bold">x3c4</span><span style="">&gt;</span></span></span></code></pre></td></tr></table>
+</div>
+</div>
+<p>You can see the four linear loads (<code>ld1</code>) that load 8 floats into 2 vectors each, a series of math computations (two iterations of the loop unrolled), and then the reduce operation at the bottom.</p>
+<p>Before getting sucked into this performance optimization exercise, I thought that performant code was clean and short and well-organized. But that&rsquo;s not true at all! Many of these optimizations made the code more confusing and <em>added</em> lines of code. It&rsquo;s less about the number of instructions and more about their latency and throughput characteristics and the topology with which they run on the CPU.</p>
+<h3 id="metrics-again">Metrics, again</h3>
+<p>I ran another profile to better understand how the linear data loads made it so much faster. I expected the # of floating point uops/cycle to go up, now that memory loads can run in parallel instead of clogging up the floating point units. I also suspected the map pipeline stalls—the fraction of cycles in which the map unit could not send instructions to dispatch queues— would drop significantly. Neither of those things happened!</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Interleaved Data Loads</th>
+<th>Linear Data Loads</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Runtime</td>
+<td>37 seconds</td>
+<td>24.7 seconds</td>
+</tr>
+<tr>
+<td>Instructions / cycle</td>
+<td>2.5</td>
+<td>3.7</td>
+</tr>
+<tr>
+<td>Floating Point uops / cycle</td>
+<td>3.0</td>
+<td>2.7</td>
+</tr>
+<tr>
+<td>% of Cycles w/Pipeline Stalls</td>
+<td>34%</td>
+<td>32%</td>
+</tr>
+</tbody>
+</table>
+<p>The instructions/cycle is the top-level metric showing the amount of instruction-level parallelism, and that did increase significantly, so the new data loads did lead to more efficiency. The drop in floating point uops/cycle makes sense in hindsight: the interleaved loads ensured the floating point units were filled to the brim for 4 cycles. If this metric is essentially an average across many sequences of code, we&rsquo;re lowering that average by replacing those instructions with others FP operations that execute less efficiently. My understanding is theoretically this metric would be 4 if all floating point execution units were used as efficiently as possible. This suggests there&rsquo;s still some headroom. And I have no idea about the pipeline stalls &ndash; they must be caused by something else<sup id="fnref:5"><a href="#fn:5" class="footnote-ref" role="doc-noteref">5</a></sup>.</p>
+<p>While I&rsquo;ve learned a lot about interpreting these numbers, I&rsquo;m still not sure how to recognize if this is as fast as it can go, or if there&rsquo;s more opportunities for optimization.</p>
+<p>As a post-script, to further probe the cause of the 2.7 fp ops/cycle I tried unrolling my loop more and less. Removing any loop unrolling (4 spheres/iteration instead of 8) makes it 10% slower but doubling it (16 spheres/iteration instead of 8) also made it 5% slower. So it seems like I&rsquo;m already in a sweet spot for serial dependency chains.</p>
+<p>Do you have ideas to make this go faster? Do you have advice on identifying performance opportunities from metrics? Let me know!</p>
+<p>And all the code can be found on <a href="https://github.com/JFeintzeig/ray_tracer">my github</a>.</p>
+<div class="footnotes" role="doc-endnotes">
+<hr>
+<ol>
+<li id="fn:1">
+<p>I naively expected a 10x speed-up because I have 10 cores, but later realized that (as I mentioned in the last post) my cores are not homogenous. As far as I can tell, each of the 6 &ldquo;performance cores&rdquo; are roughly twice as powerful as each of the 4 &ldquo;efficiency cores&rdquo;. Also, the recursion-cache-miss problem only appeared when running on multiple cores, so I think some of that speed-up can also be attributed to having multiple cores.&#160;<a href="#fnref:1" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:2">
+<p>Compilers can also vectorize code automatically, but writing SIMD code by hand is often required to get the most performance for a computationally-intensive routine. Similarly, carefully crafted code can improve instruction-level parallelism.&#160;<a href="#fnref:2" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:3">
+<p>It&rsquo;s slightly more complicated because the efficiency cores only have 2 floating point units. But looking at only the performance cores I was running 3.6 FP uops/cycle with a theoretical max of 4.&#160;<a href="#fnref:3" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:4">
+<p>While I felt smart for figuring this out on my own, in hindsight I realized the NEON programmer guide clearly states that direct loads are faster than interleaved loads&hellip;<em>groan</em>. Oh well, it was more fun this way.&#160;<a href="#fnref:4" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+<li id="fn:5">
+<p>Other metrics show 80% of pipeline stalls are caused by &ldquo;dispatch backpressure&rdquo;, which suggests the back-end of the CPU (e.g. the execution units) is clogged up and causing the stall. It&rsquo;s possible this is just caused by the program being dominated by FP operations: e.g. if the mappers send the max of 8uops to the FP queues each cycle but the FP units can only execute 4 uops. But combined with the sub-par FP ops/cycle, my hunch is something else is going on. The other 20% must be front-end latency (maybe instruction fetching? branch mis-prediction? I&rsquo;m not sure).&#160;<a href="#fnref:5" class="footnote-backref" role="doc-backlink">&#x21a9;&#xfe0e;</a></p>
+</li>
+</ol>
+</div>
+
+			</div>
+
+			<div class="tags">
+				
+					
+				
+			</div></div>
+	</div>
+	<div class="footer wrapper">
+	<nav class="nav">
+		<div>2024  <a href="https://github.com/knadh/hugo-ink">Ink</a> theme on <a href="https://gohugo.io">Hugo</a></div>
+	</nav>
+</div>
+
+<script>feather.replace()</script>
+</body>
+</html>
