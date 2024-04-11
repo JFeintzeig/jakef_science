@@ -6,8 +6,15 @@
     <description>Recent content in Posts on Jake&#39;s Blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Fri, 29 Mar 2024 13:24:38 -0400</lastBuildDate>
+    <lastBuildDate>Thu, 11 Apr 2024 15:22:32 -0400</lastBuildDate>
     <atom:link href="https://www.jakef.science/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>A Recurse Center Return Statement</title>
+      <link>https://www.jakef.science/posts/return-statement/</link>
+      <pubDate>Thu, 11 Apr 2024 15:22:32 -0400</pubDate>
+      <guid>https://www.jakef.science/posts/return-statement/</guid>
+      <description>I recent completed 18 weeks at the Recurse Center, &amp;ldquo;the retreat where curious programmers recharge and grow&amp;rdquo;. It&amp;rsquo;s customary to write a Return Statement1 reflecting on your experience. Here&amp;rsquo;s mine.&#xA;My vague goal when I started RC was to learn &amp;ldquo;how computers work&amp;rdquo; at a basic level. I wanted to explore topics in security and low-level systems, and I wanted to stretch my abilities in thinking adversarially, being creative, and designing software.</description>
+    </item>
     <item>
       <title>SIMD &#43; Parallelism: Ray Tracer Optimization Part 3</title>
       <link>https://www.jakef.science/posts/simd-parallelism/</link>
