@@ -18,9 +18,9 @@ During the course of my batch, I worked on:
 * Smaller projects:
   - Completed the first half of [2023 Advent of Code](https://github.com/JFeintzeig/advent_of_code_2023) (in Go).
   * Started learning embedded development, did a few ESP32 tutorials (in C), gave up.
-  * Researched polygot files and created a `.pyc` / `.zip` polygot.
+  * Researched polyglot files and created a `.pyc` / `.zip` polyglot.
   * Implemented a basic web server in C while learning Linux socket programming.
-* Pair programmed: I pair programmed with 43 people over 60 sessions, on projects ranging from assembly calling conventions to CSS animations. We working in 13 languages[^1] and I learned at least one thing every session. The best ones led to breakthroughs in understanding or inspiration that changed what I worked on.
+* Pair programmed: I pair programmed with 43 people over 60 sessions, on projects ranging from assembly calling conventions to CSS animations. We worked in 13 languages[^1] and I learned at least one thing every session. The best ones led to breakthroughs in understanding or inspiration that changed what I worked on.
 * Interest groups:
   * I led a weekly interest group on Emulators and Virtual Machines that became a mainstay of my batch. We discussed everything from gaming emulators to Web Assembly, CPython, virtualization, JITs.
   * I attended weekly meet-ups for cryptopals and C programming, and ocassionally attended workshops on CTFs, authentication, quantum computing.

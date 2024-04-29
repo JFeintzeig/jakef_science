@@ -2,13 +2,16 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
   xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
-    <loc>https://www.jakef.science/posts/return-statement/</loc>
-    <lastmod>2024-04-11T15:22:32-04:00</lastmod>
-  </url><url>
     <loc>https://www.jakef.science/</loc>
-    <lastmod>2024-04-11T15:22:32-04:00</lastmod>
+    <lastmod>2024-04-28T17:53:43-04:00</lastmod>
+  </url><url>
+    <loc>https://www.jakef.science/posts/microcorruption-mania/</loc>
+    <lastmod>2024-04-28T17:53:43-04:00</lastmod>
   </url><url>
     <loc>https://www.jakef.science/posts/</loc>
+    <lastmod>2024-04-28T17:53:43-04:00</lastmod>
+  </url><url>
+    <loc>https://www.jakef.science/posts/return-statement/</loc>
     <lastmod>2024-04-11T15:22:32-04:00</lastmod>
   </url><url>
     <loc>https://www.jakef.science/posts/simd-parallelism/</loc>

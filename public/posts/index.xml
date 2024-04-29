@@ -6,8 +6,15 @@
     <description>Recent content in Posts on Jake&#39;s Blog</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>en-us</language>
-    <lastBuildDate>Thu, 11 Apr 2024 15:22:32 -0400</lastBuildDate>
+    <lastBuildDate>Sun, 28 Apr 2024 17:53:43 -0400</lastBuildDate>
     <atom:link href="https://www.jakef.science/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Microcorruption Mania</title>
+      <link>https://www.jakef.science/posts/microcorruption-mania/</link>
+      <pubDate>Sun, 28 Apr 2024 17:53:43 -0400</pubDate>
+      <guid>https://www.jakef.science/posts/microcorruption-mania/</guid>
+      <description>At first, Microcorruption was just a diversion. Whenever I was bored with my main project, I could spend a few hours on a fun puzzle, learn about buffer overflows, and get a nice hit of endorphins when I solved it. But as the levels became more involved I got sucked in deeper. I would start first thing in the morning, racing against the clock because I wouldn&amp;rsquo;t be able to fall sleep until I solved it.</description>
+    </item>
     <item>
       <title>A Recurse Center Return Statement</title>
       <link>https://www.jakef.science/posts/return-statement/</link>
